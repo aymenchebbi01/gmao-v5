@@ -1,6 +1,6 @@
 {
-  "name": "Remix Remix gmao-v1",
-  "description": "Imported from GitHub",
+  "name": "Thermoplastics Tunisia GMAO",
+  "description": "Industrial GMAO (CMMS) Maintenance Management System for Thermoplastics Tunisia: Machines, Molds, Intervention Requests, Maintenance Orders, Stock, and KPIs.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

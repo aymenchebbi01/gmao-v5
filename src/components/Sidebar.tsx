@@ -287,8 +287,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <div className="space-y-1">
                   {renderItem('analysis-kpis', 'Analysis & KPIs', undefined, currentView === 'analysis-kpis')}
                   {renderItem('calendar', 'Preventive Schedule', undefined, currentView === 'calendar')}
-                  {renderItem('audit-trail', 'Audit & Movements', undefined, currentView === 'audit-trail')}
-                  {renderItem('backup-restore', 'Backup & Restore', undefined, currentView === 'backup-restore')}
+                  {isAdmin && renderItem('audit-trail', 'Audit & Movements', undefined, currentView === 'audit-trail')}
+                  {isAdmin && renderItem('backup-restore', 'Backup & Restore', undefined, currentView === 'backup-restore')}
                   {isAdmin && renderItem('users', 'Users', undefined, currentView === 'users')}
                 </div>
               </div>
@@ -390,24 +390,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   }`}
               >
               </button>
-              <button
-                onClick={() => onNavigate('audit-trail')}
-                title="Audit & Movements"
-                className={`p-2.5 rounded-xl transition-all cursor-pointer relative ${currentView === 'audit-trail'
-                  ? 'bg-white text-neutral-900 shadow-md'
-                  : 'text-neutral-900 hover:bg-black/10'
-                  }`}
-              >
-              </button>
-              <button
-                onClick={() => onNavigate('backup-restore')}
-                title="Backup & Restore"
-                className={`p-2.5 rounded-xl transition-all cursor-pointer ${currentView === 'backup-restore'
-                  ? 'bg-white text-neutral-900 shadow-md'
-                  : 'text-neutral-900 hover:bg-black/10'
-                  }`}
-              >
-              </button>
+              {isAdmin && (
+                <button
+                  onClick={() => onNavigate('audit-trail')}
+                  title="Audit & Movements"
+                  className={`p-2.5 rounded-xl transition-all cursor-pointer relative ${currentView === 'audit-trail'
+                    ? 'bg-white text-neutral-900 shadow-md'
+                    : 'text-neutral-900 hover:bg-black/10'
+                    }`}
+                >
+                </button>
+              )}
+              {isAdmin && (
+                <button
+                  onClick={() => onNavigate('backup-restore')}
+                  title="Backup & Restore"
+                  className={`p-2.5 rounded-xl transition-all cursor-pointer ${currentView === 'backup-restore'
+                    ? 'bg-white text-neutral-900 shadow-md'
+                    : 'text-neutral-900 hover:bg-black/10'
+                    }`}
+                >
+                </button>
+              )}
               {isAdmin && (
                 <button
                   onClick={() => onNavigate('users')}

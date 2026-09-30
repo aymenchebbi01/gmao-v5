@@ -65,7 +65,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Login from './components/Login';
 import TabletLogin from './components/TabletLogin';
 import { Toaster } from 'sonner';
-import { LogIn, CheckCircle2, Database } from 'lucide-react';
+import { LogIn, CheckCircle2, Database, ShieldAlert } from 'lucide-react';
 import { sqliteApi } from './services/sqliteApi';
 import { isMobileApp, setMobileSession } from './lib/utils';
 import { generateNextReportRef } from './lib/gmaoUtils';
@@ -161,6 +161,17 @@ function GMAOAppContent() {
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>(INITIAL_CALENDAR_EVENTS);
   const [users, setUsers] = useState<AppUser[]>(INITIAL_USERS);
   const currentUser: AppUser = user || users[0] || INITIAL_USERS[0];
+  const isAdmin = currentUser.role === 'admin' || currentUser.role?.toLowerCase()?.includes('admin');
+
+  // Enforce admin-only access for users, audit-trail, backup-restore, and audit-report
+  React.useEffect(() => {
+    const adminOnlyViews: ViewKey[] = ['users', 'audit-trail', 'backup-restore', 'audit-report'];
+    if (!isAdmin && adminOnlyViews.includes(currentView)) {
+      setCurrentView('dashboard');
+      window.location.hash = '#/dashboard';
+    }
+  }, [isAdmin, currentView]);
+
   const [moldMaintenances, setMoldMaintenances] = useState<MoldMaintenance[]>(INITIAL_MOLD_MAINTENANCES);
   const [productionOrders, setProductionOrders] = useState<ProductionOrderOF[]>([]);
 
@@ -313,6 +324,12 @@ function GMAOAppContent() {
 
   // Safe navigation that remembers list origin & updates URL hash
   const navigateTo = (view: ViewKey) => {
+    const adminOnlyViews: ViewKey[] = ['users', 'audit-trail', 'backup-restore', 'audit-report'];
+    if (!isAdmin && adminOnlyViews.includes(view)) {
+      showNotification('Accès refusé : interface réservée aux administrateurs.');
+      return;
+    }
+
     if (
       currentView !== 'intervention-report-fill' &&
       currentView !== 'new-intervention-request' &&
@@ -1753,6 +1770,7 @@ function GMAOAppContent() {
   // User Management Handlers
   const handleAddUser = (newUser: AppUser) => {
     setUsers((prev) => [newUser, ...prev]);
+    sqliteApi.createUser(newUser).catch((err) => console.warn('SQLite create user error:', err));
     logMovement({
       category: 'Users & IAM',
       action: 'CREATE',
@@ -1766,6 +1784,7 @@ function GMAOAppContent() {
 
   const handleUpdateUser = (updatedUser: AppUser) => {
     setUsers((prev) => prev.map((u) => (u.id === updatedUser.id ? updatedUser : u)));
+    sqliteApi.saveUser(updatedUser).catch((err) => console.warn('SQLite save user error:', err));
     if (currentUser.id === updatedUser.id) {
       setAuthUser(updatedUser);
       try {
@@ -1777,11 +1796,14 @@ function GMAOAppContent() {
 
   const handleToggleUserStatus = (userId: string) => {
     setUsers((prev) =>
-      prev.map((u) =>
-        u.id === userId
-          ? { ...u, status: u.status === 'Active' ? 'Inactive' : 'Active' }
-          : u
-      )
+      prev.map((u) => {
+        if (u.id === userId) {
+          const updated = { ...u, status: (u.status === 'Active' ? 'Inactive' : 'Active') as 'Active' | 'Inactive' };
+          sqliteApi.saveUser(updated).catch((err) => console.warn('SQLite toggle user status error:', err));
+          return updated;
+        }
+        return u;
+      })
     );
     showNotification('User account status updated.');
   };
@@ -2054,10 +2076,10 @@ function GMAOAppContent() {
             currentUser={currentUser}
             users={users}
             onSwitchUser={handleSwitchCurrentUser}
-            onOpenUsers={() => navigateTo('users')}
+            onOpenUsers={isAdmin ? () => navigateTo('users') : undefined}
             onLogout={logout}
             onDownloadReport={
-              currentView === 'dashboard' ? () => navigateTo('audit-report') : undefined
+              currentView === 'dashboard' && isAdmin ? () => navigateTo('audit-report') : undefined
             }
             onAdd={
               currentView === 'intervention-request'
@@ -2332,42 +2354,94 @@ function GMAOAppContent() {
             )}
 
             {currentView === 'audit-report' && (
-              <AuditReportView
-                requests={requests}
-                orders={orders}
-                machines={machines}
-                molds={molds}
-                stock={stock}
-                onBack={() => navigateTo('dashboard')}
-              />
+              isAdmin ? (
+                <AuditReportView
+                  requests={requests}
+                  orders={orders}
+                  machines={machines}
+                  molds={molds}
+                  stock={stock}
+                  onBack={() => navigateTo('dashboard')}
+                />
+              ) : (
+                <div className="p-8 max-w-lg mx-auto text-center space-y-4 bg-white rounded-3xl border border-neutral-300 shadow-xs my-8">
+                  <div className="w-16 h-16 bg-red-100 text-red-600 rounded-2xl flex items-center justify-center mx-auto">
+                    <ShieldAlert className="w-8 h-8" />
+                  </div>
+                  <h2 className="text-xl font-black text-neutral-900">Accès Administrateur Requis</h2>
+                  <p className="text-xs text-neutral-500">Le rapport d'audit est réservé au profil Administrateur.</p>
+                  <button onClick={() => navigateTo('dashboard')} className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs">
+                    Retour au Tableau de Bord
+                  </button>
+                </div>
+              )
             )}
 
             {currentView === 'users' && (
-              <UsersView
-                users={users}
-                onAddUser={handleAddUser}
-                onUpdateUser={handleUpdateUser}
-                onToggleStatus={handleToggleUserStatus}
-                onDeleteUser={handleDeleteUser}
-                currentUser={currentUser}
-                onSwitchCurrentUser={handleSwitchCurrentUser}
-              />
+              isAdmin ? (
+                <UsersView
+                  users={users}
+                  onAddUser={handleAddUser}
+                  onUpdateUser={handleUpdateUser}
+                  onToggleStatus={handleToggleUserStatus}
+                  onDeleteUser={handleDeleteUser}
+                  currentUser={currentUser}
+                  onSwitchCurrentUser={handleSwitchCurrentUser}
+                />
+              ) : (
+                <div className="p-8 max-w-lg mx-auto text-center space-y-4 bg-white rounded-3xl border border-neutral-300 shadow-xs my-8">
+                  <div className="w-16 h-16 bg-red-100 text-red-600 rounded-2xl flex items-center justify-center mx-auto">
+                    <ShieldAlert className="w-8 h-8" />
+                  </div>
+                  <h2 className="text-xl font-black text-neutral-900">Accès Administrateur Requis</h2>
+                  <p className="text-xs text-neutral-500">La gestion des utilisateurs et des accès système est strictement réservée au profil Administrateur.</p>
+                  <button onClick={() => navigateTo('dashboard')} className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs">
+                    Retour au Tableau de Bord
+                  </button>
+                </div>
+              )
             )}
 
             {currentView === 'audit-trail' && (
-              <AuditTrailView
-                currentUser={currentUser}
-                onRefresh={() => showNotification('Audit trail refreshed with live telemetry.')}
-              />
+              isAdmin ? (
+                <AuditTrailView
+                  currentUser={currentUser}
+                  onRefresh={() => showNotification('Audit trail refreshed with live telemetry.')}
+                />
+              ) : (
+                <div className="p-8 max-w-lg mx-auto text-center space-y-4 bg-white rounded-3xl border border-neutral-300 shadow-xs my-8">
+                  <div className="w-16 h-16 bg-red-100 text-red-600 rounded-2xl flex items-center justify-center mx-auto">
+                    <ShieldAlert className="w-8 h-8" />
+                  </div>
+                  <h2 className="text-xl font-black text-neutral-900">Accès Administrateur Requis</h2>
+                  <p className="text-xs text-neutral-500">Le journal d'audit et la traçabilité système sont strictement réservés au profil Administrateur.</p>
+                  <button onClick={() => navigateTo('dashboard')} className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs">
+                    Retour au Tableau de Bord
+                  </button>
+                </div>
+              )
             )}
 
             {currentView === 'backup-restore' && (
-              <BackupView
-                currentUser={currentUser}
-                state={fullGMAOState}
-                onRestoreState={handleRestoreFullState}
-                onResetFactoryData={handleFactoryResetData}
-              />
+              isAdmin ? (
+                <BackupView
+                  currentUser={currentUser}
+                  state={fullGMAOState}
+                  onRestoreState={handleRestoreFullState}
+                  onResetFactoryData={handleFactoryResetData}
+                />
+              ) : (
+                <div className="p-8 max-w-lg mx-auto text-center space-y-4 bg-white rounded-3xl border border-neutral-300 shadow-xs my-8">
+                  <div className="w-16 h-16 bg-red-100 text-red-600 rounded-2xl flex items-center justify-center mx-auto">
+                    <ShieldAlert className="w-8 h-8" />
+                  </div>
+                  <h2 className="text-xl font-black text-neutral-900">Accès Administrateur Requis</h2>
+                  <p className="text-xs text-neutral-500">La gestion des sauvegardes et la restauration de la base de données sont strictement réservées au profil Administrateur.</p>
+                  <button onClick={() => navigateTo('dashboard')} className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs">
+                    Retour au Tableau de Bord
+                  </button>
+                </div>
+              )
             )}
 
             {currentView === 'ot-pdf-report' && selectedOrderForPdf && (

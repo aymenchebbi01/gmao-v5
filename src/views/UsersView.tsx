@@ -20,6 +20,8 @@ import {
   Check,
   Info,
   Trash2,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 
 interface UsersViewProps {
@@ -112,6 +114,8 @@ export const UsersView: React.FC<UsersViewProps> = ({
   // Form State
   const [name, setName] = useState('');
   const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [role, setRole] = useState<UserRole>('technician');
@@ -143,6 +147,8 @@ export const UsersView: React.FC<UsersViewProps> = ({
     setEditingUserId(null);
     setName('');
     setUsername('');
+    setPassword('');
+    setShowPassword(false);
     setEmail('');
     setPhone('+216 ');
     setRole('technician');
@@ -157,6 +163,8 @@ export const UsersView: React.FC<UsersViewProps> = ({
     setEditingUserId(user.id);
     setName(user.name);
     setUsername(user.username);
+    setPassword(user.password || '');
+    setShowPassword(false);
     setEmail(user.email);
     setPhone(user.phone);
     setRole(user.role);
@@ -170,6 +178,8 @@ export const UsersView: React.FC<UsersViewProps> = ({
   const handleCloseForm = () => {
     setIsFormOpen(false);
     setEditingUserId(null);
+    setPassword('');
+    setShowPassword(false);
   };
 
   const handleFormSubmit = (e: React.FormEvent) => {
@@ -183,6 +193,7 @@ export const UsersView: React.FC<UsersViewProps> = ({
           ...existing,
           name,
           username,
+          password: password ? password : existing.password,
           email,
           phone,
           role,
@@ -197,6 +208,7 @@ export const UsersView: React.FC<UsersViewProps> = ({
         id: `usr-${Date.now()}`,
         name,
         username,
+        password: password.trim() ? password.trim() : undefined,
         email,
         phone,
         role,
@@ -331,10 +343,10 @@ export const UsersView: React.FC<UsersViewProps> = ({
           </div>
 
           <form onSubmit={handleFormSubmit} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div>
                 <label className="block text-xs font-bold text-neutral-700 uppercase mb-1">
-                  Full Name
+                  Full Name *
                 </label>
                 <input
                   type="text"
@@ -348,7 +360,7 @@ export const UsersView: React.FC<UsersViewProps> = ({
 
               <div>
                 <label className="block text-xs font-bold text-neutral-700 uppercase mb-1">
-                  Username
+                  Username *
                 </label>
                 <input
                   type="text"
@@ -361,8 +373,37 @@ export const UsersView: React.FC<UsersViewProps> = ({
               </div>
 
               <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-neutral-700 uppercase flex items-center gap-1">
+                    <KeyRound className="w-3 h-3 text-blue-600" />
+                    <span>Password</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="text-[11px] text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1 cursor-pointer"
+                  >
+                    {showPassword ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                    <span>{showPassword ? 'Hide' : 'Show'}</span>
+                  </button>
+                </div>
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder={editingUserId ? '•••••••• (leave blank to keep)' : 'Enter password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full bg-neutral-50 border border-neutral-300 rounded-xl px-3 py-2 text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  />
+                </div>
+                <p className="text-[10px] text-neutral-500 mt-1">
+                  {editingUserId ? 'Leave blank to preserve current' : 'Account login credential'}
+                </p>
+              </div>
+
+              <div>
                 <label className="block text-xs font-bold text-neutral-700 uppercase mb-1">
-                  Email Address
+                  Email Address *
                 </label>
                 <input
                   type="email"
@@ -582,8 +623,27 @@ export const UsersView: React.FC<UsersViewProps> = ({
                                     </span>
                                   )}
                                 </div>
-                                <div className="text-xs text-neutral-500 font-mono">
-                                  @{u.username} · {u.email}
+                                <div className="text-xs text-neutral-500 font-mono flex items-center gap-1.5 flex-wrap">
+                                  <span>@{u.username}</span>
+                                  <span>·</span>
+                                  <span>{u.email}</span>
+                                  {u.password ? (
+                                    <span
+                                      className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200"
+                                      title="Password configured"
+                                    >
+                                      <KeyRound className="w-2.5 h-2.5" />
+                                      <span>Password set</span>
+                                    </span>
+                                  ) : (
+                                    <span
+                                      className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200"
+                                      title="No password required"
+                                    >
+                                      <KeyRound className="w-2.5 h-2.5" />
+                                      <span>No password</span>
+                                    </span>
+                                  )}
                                 </div>
                               </div>
                             </div>
