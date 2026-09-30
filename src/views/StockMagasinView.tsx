@@ -83,12 +83,34 @@ export const StockMagasinView: React.FC<StockMagasinViewProps> = ({
   // Form State for New Item (PDR / Spare Parts only)
   const [partNumber, setPartNumber] = useState('');
   const [name, setName] = useState('');
-  const [category, setCategory] = useState<StockCategory>('Mechanical');
+  const [category, setCategory] = useState<string>('Mechanical');
   const [currentQty, setCurrentQty] = useState<number>(10);
   const [minQty, setMinQty] = useState<number>(2);
   const [unit, setUnit] = useState('pcs');
   const [unitPrice, setUnitPrice] = useState<number>(25.0);
   const [shelfLocation, setShelfLocation] = useState('Rayon M - Tiroir 01');
+
+  const defaultStandardCategories = [
+    'Mechanical',
+    'Hydraulic',
+    'Electrical',
+    'Pneumatic',
+    'Mold Part',
+    'Consumable',
+    'Tooling',
+    'Hardware',
+  ];
+
+  const allCategories = useMemo(() => {
+    const set = new Set<string>(defaultStandardCategories);
+    stock.forEach((s) => {
+      if (s.category && typeof s.category === 'string') {
+        const trimmed = s.category.trim();
+        if (trimmed) set.add(trimmed);
+      }
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [stock]);
   const [supplier, setSupplier] = useState('');
   const [supplierRef, setSupplierRef] = useState('');
   const [compatibleMachinesStr, setCompatibleMachinesStr] = useState('ALL');
@@ -449,24 +471,35 @@ export const StockMagasinView: React.FC<StockMagasinViewProps> = ({
         'Unnamed Material'
       ).trim();
 
-      const rawCat = String(r['Categorie'] || r['Category'] || r['category'] || 'Mechanical').trim();
-      let matchedCat: StockCategory = 'Mechanical';
-      if (rawCat.toLowerCase().includes('hydraul')) {
+      const rawCat = String(
+        r['Categorie'] ||
+        r['Catégorie'] ||
+        r['Category'] ||
+        r['category'] ||
+        r['catégorie'] ||
+        ''
+      ).trim();
+
+      let matchedCat: string = rawCat || 'Mechanical';
+      const lower = rawCat.toLowerCase();
+      if (lower === 'hydraul' || lower === 'hydraulique') {
         matchedCat = 'Hydraulic';
-      } else if (rawCat.toLowerCase().includes('electr')) {
+      } else if (lower === 'electr' || lower === 'electrique' || lower === 'électrique') {
         matchedCat = 'Electrical';
-      } else if (rawCat.toLowerCase().includes('pneu')) {
+      } else if (lower === 'pneu' || lower === 'pneumatique') {
         matchedCat = 'Pneumatic';
-      } else if (rawCat.toLowerCase().includes('mould') || rawCat.toLowerCase().includes('moule') || rawCat.toLowerCase().includes('mold')) {
+      } else if (lower === 'mould' || lower === 'moule' || lower === 'mold' || lower === 'mold part') {
         matchedCat = 'Mold Part';
-      } else if (rawCat.toLowerCase().includes('meca') || rawCat.toLowerCase().includes('mech')) {
+      } else if (lower === 'meca' || lower === 'mecanique' || lower === 'mécanique') {
         matchedCat = 'Mechanical';
-      } else if (rawCat.toLowerCase().includes('consum') || rawCat.toLowerCase().includes('consommable')) {
+      } else if (lower === 'consum' || lower === 'consommable') {
         matchedCat = 'Consumable';
-      } else if (rawCat.toLowerCase().includes('tool') || rawCat.toLowerCase().includes('outil')) {
+      } else if (lower === 'tool' || lower === 'outil' || lower === 'outillage') {
         matchedCat = 'Tooling';
-      } else if (rawCat.toLowerCase().includes('vis') || rawCat.toLowerCase().includes('hardw') || rawCat.toLowerCase().includes('boulon')) {
+      } else if (lower === 'vis' || lower === 'visserie' || lower === 'hardware' || lower === 'quincaillerie') {
         matchedCat = 'Hardware';
+      } else if (rawCat) {
+        matchedCat = rawCat;
       }
 
       const currentQtyVal = parseFloat(r['Quantite en Stock'] || r['Stock'] || r['Quantity'] || r['currentQty'] || '0') || 0;
@@ -501,21 +534,28 @@ export const StockMagasinView: React.FC<StockMagasinViewProps> = ({
   const handleConfirmImport = () => {
     if (importPreview.length === 0) return;
 
-    const validItems: StockItem[] = importPreview.map((item) => ({
-      id: item.id || `sp-${Date.now()}-${Math.random()}`,
-      partNumber: item.partNumber || 'REF-GEN',
-      name: item.name || 'Unnamed Part',
-      category: item.category || 'Mechanical',
-      currentQty: item.currentQty || 0,
-      minQty: item.minQty || 1,
-      unit: item.unit || 'pcs',
-      unitPrice: item.unitPrice || 0,
-      shelfLocation: item.shelfLocation || 'Magasin PDR',
-      supplier: item.supplier,
-      compatibleMachines: item.compatibleMachines || ['ALL'],
-      barcode: item.barcode || `${item.partNumber}-BC`,
-      lastRestocked: item.lastRestocked || new Date().toISOString().split('T')[0],
-    }));
+    const validItems: StockItem[] = importPreview.map((item) => {
+      const cleanRef = (item.partNumber || 'REF-GEN').trim();
+      const existing = stock.find(
+        (s) => s.partNumber?.trim().toLowerCase() === cleanRef.toLowerCase()
+      );
+
+      return {
+        id: existing?.id || item.id || `sp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        partNumber: cleanRef,
+        name: (item.name || 'Unnamed Part').trim(),
+        category: (item.category || 'Mechanical').trim(),
+        currentQty: Number(item.currentQty) || 0,
+        minQty: Number(item.minQty) || 1,
+        unit: (item.unit || 'pcs').trim(),
+        unitPrice: Number(item.unitPrice) || 0,
+        shelfLocation: (item.shelfLocation || 'Magasin PDR').trim(),
+        supplier: item.supplier?.trim() || undefined,
+        compatibleMachines: item.compatibleMachines || ['ALL'],
+        barcode: item.barcode || `${cleanRef}-BC`,
+        lastRestocked: item.lastRestocked || new Date().toISOString().split('T')[0],
+      };
+    });
 
     if (onBulkImport) {
       onBulkImport(validItems);
@@ -860,15 +900,15 @@ export const StockMagasinView: React.FC<StockMagasinViewProps> = ({
                   onChange={(e) => setSelectedCategory(e.target.value)}
                   className="bg-transparent font-bold text-neutral-900 focus:outline-none cursor-pointer"
                 >
-                  <option value="All">Toutes les catégories PDR</option>
-                  <option value="Mechanical">Mechanical (Mécanique)</option>
-                  <option value="Hydraulic">Hydraulic (Hydraulique)</option>
-                  <option value="Electrical">Electrical (Électrique)</option>
-                  <option value="Pneumatic">Pneumatic (Pneumatique)</option>
-                  <option value="Mold Part">Mold Part (Composant Moule)</option>
-                  <option value="Consumable">Consumable (Consommable)</option>
-                  <option value="Tooling">Tooling (Outillage)</option>
-                  <option value="Hardware">Hardware (Quincaillerie / Visserie)</option>
+                  <option value="All">Toutes les catégories PDR ({stock.length})</option>
+                  {allCategories.map((cat) => {
+                    const count = stock.filter((s) => s.category?.toLowerCase() === cat.toLowerCase()).length;
+                    return (
+                      <option key={cat} value={cat}>
+                        {cat} {count > 0 ? `(${count})` : ''}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
 
@@ -1117,23 +1157,28 @@ export const StockMagasinView: React.FC<StockMagasinViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-neutral-700 uppercase mb-1">
-                    Catégorie *
-                  </label>
-                  <select
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-neutral-700 uppercase">
+                      Catégorie *
+                    </label>
+                    <span className="text-[10px] text-blue-600 font-semibold">
+                      Sélectionnez ou écrivez librement
+                    </span>
+                  </div>
+                  <input
+                    type="text"
+                    list="stock-magasin-available-categories"
+                    required
+                    placeholder="Choisir ou écrire une catégorie..."
                     value={category}
-                    onChange={(e) => setCategory(e.target.value as StockCategory)}
-                    className="w-full bg-[#f8faf9] border border-neutral-300 rounded-xl px-3 py-2 text-sm font-bold focus:ring-2 focus:ring-blue-500 focus:outline-none cursor-pointer"
-                  >
-                    <option value="Mechanical">Mechanical (Mécanique)</option>
-                    <option value="Hydraulic">Hydraulic (Hydraulique)</option>
-                    <option value="Electrical">Electrical (Électrique)</option>
-                    <option value="Pneumatic">Pneumatic (Pneumatique)</option>
-                    <option value="Mold Part">Mold Part (Composant Moule)</option>
-                    <option value="Consumable">Consumable (Consommable)</option>
-                    <option value="Tooling">Tooling (Outillage)</option>
-                    <option value="Hardware">Hardware (Quincaillerie / Visserie)</option>
-                  </select>
+                    onChange={(e) => setCategory(e.target.value)}
+                    className="w-full bg-[#f8faf9] border border-neutral-300 rounded-xl px-3 py-2 text-sm font-bold focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  />
+                  <datalist id="stock-magasin-available-categories">
+                    {allCategories.map((c) => (
+                      <option key={c} value={c} />
+                    ))}
+                  </datalist>
                 </div>
               </div>
 
@@ -1385,7 +1430,21 @@ export const StockMagasinView: React.FC<StockMagasinViewProps> = ({
                         <tr key={idx} className="hover:bg-neutral-50">
                           <td className="py-2 px-3 font-mono font-bold text-blue-700">{item.partNumber}</td>
                           <td className="py-2 px-4 font-semibold text-neutral-900 truncate max-w-xs">{item.name}</td>
-                          <td className="py-2 px-3">{item.category}</td>
+                          <td className="py-1.5 px-3">
+                            <input
+                              type="text"
+                              list="stock-magasin-available-categories"
+                              value={item.category || ''}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setImportPreview((prev) =>
+                                  prev.map((it, i) => (i === idx ? { ...it, category: val } : it))
+                                );
+                              }}
+                              className="w-32 bg-white border border-neutral-300 rounded-lg px-2 py-1 text-xs font-semibold focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                              placeholder="Catégorie..."
+                            />
+                          </td>
                           <td className="py-2 px-3 text-center font-mono font-bold">
                             {item.currentQty} {item.unit}
                           </td>

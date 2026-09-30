@@ -261,6 +261,23 @@ export const sqliteApi = {
       body: JSON.stringify(normalized),
     });
   },
+  async batchUpsertStockItems(items: StockItem[]): Promise<StockItem[]> {
+    const normalizedList: StockItem[] = items.map((item) => ({
+      ...item,
+      partNumber: item.partNumber || item.sku || '',
+      sku: item.sku || item.partNumber || '',
+      currentQty: item.currentQty !== undefined ? item.currentQty : (item.stock || 0),
+      stock: item.stock !== undefined ? item.stock : (item.currentQty || 0),
+      minQty: item.minQty !== undefined ? item.minQty : (item.minStock || 0),
+      minStock: item.minStock !== undefined ? item.minStock : (item.minQty || 0),
+      shelfLocation: item.shelfLocation || item.location || '',
+      location: item.location || item.shelfLocation || '',
+    }));
+    return fetchJson<StockItem[]>('/api/stock-items/batch', {
+      method: 'POST',
+      body: JSON.stringify(normalizedList),
+    });
+  },
   async deleteStockItem(id: string): Promise<void> {
     await fetchJson(`/api/stock-items/${id}`, { method: 'DELETE' });
   },
@@ -377,6 +394,9 @@ export const sqliteApi = {
       method: 'POST',
       body: JSON.stringify(movement),
     });
+  },
+  async deleteStockMovement(id: string): Promise<void> {
+    await fetchJson(`/api/stock-movements/${id}`, { method: 'DELETE' });
   },
 
   // Raw Materials

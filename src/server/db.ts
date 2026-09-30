@@ -962,6 +962,27 @@ export async function upsertStockItem(item: StockItem): Promise<StockItem> {
   return item;
 }
 
+export async function batchUpsertStockItems(items: StockItem[]): Promise<StockItem[]> {
+  const database = await initializeDatabase();
+  const now = new Date().toISOString();
+  database.run('BEGIN TRANSACTION;');
+  try {
+    for (const item of items) {
+      database.run(
+        `INSERT OR REPLACE INTO stock_items (id, part_number, name, category, current_qty, min_qty, unit, shelf_location, unit_price, data, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [item.id, item.partNumber, item.name, item.category, item.currentQty, item.minQty, item.unit, item.shelfLocation, item.unitPrice, JSON.stringify(item), now]
+      );
+    }
+    database.run('COMMIT;');
+  } catch (e) {
+    database.run('ROLLBACK;');
+    throw e;
+  }
+  persistDatabase();
+  return items;
+}
+
 export async function deleteStockItem(id: string): Promise<boolean> {
   const database = await initializeDatabase();
   database.run('DELETE FROM stock_items WHERE id = ?;', [id]);
@@ -989,6 +1010,13 @@ export async function addStockMovement(sm: StockMovement): Promise<StockMovement
   );
   persistDatabase();
   return sm;
+}
+
+export async function deleteStockMovement(id: string): Promise<boolean> {
+  const database = await initializeDatabase();
+  database.run('DELETE FROM stock_movements WHERE id = ?;', [id]);
+  persistDatabase();
+  return true;
 }
 
 /**

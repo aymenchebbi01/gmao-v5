@@ -1651,48 +1651,73 @@ function GMAOAppContent() {
     reason: string = 'Manual Adjustment',
     refDoc?: string
   ) => {
+    let updatedItem: StockItem | null = null;
+    let newMovement: StockMovement | null = null;
+
     setStock((prev) =>
       prev.map((s) => {
         if (s.id === id) {
           const newQty = Math.max(0, s.currentQty + delta);
           const mvtType: 'IN' | 'OUT' | 'ADJUSTMENT' =
             delta > 0 ? 'IN' : delta < 0 ? 'OUT' : 'ADJUSTMENT';
-          setStockMovements((prevMvt) => [
-            {
-              id: `mvt-${Date.now()}`,
-              date: new Date().toISOString().replace('T', ' ').slice(0, 16),
-              itemId: s.id,
-              partNumber: s.partNumber,
-              itemName: s.name,
-              type: mvtType,
-              qty: Math.abs(delta),
-              previousQty: s.currentQty,
-              newQty,
-              reason: (reason as any) || 'Manual Adjustment',
-              referenceDoc: refDoc,
-              operator: currentUser?.name || 'Administrator',
-            },
-            ...prevMvt,
-          ]);
-          return { ...s, currentQty: newQty };
+          newMovement = {
+            id: `mvt-${Date.now()}`,
+            date: new Date().toISOString().replace('T', ' ').slice(0, 16),
+            itemId: s.id,
+            partNumber: s.partNumber,
+            itemName: s.name,
+            type: mvtType,
+            qty: Math.abs(delta),
+            previousQty: s.currentQty,
+            newQty,
+            reason: (reason as any) || 'Manual Adjustment',
+            referenceDoc: refDoc,
+            operator: currentUser?.name || 'Administrator',
+          };
+          setStockMovements((prevMvt) => [newMovement!, ...prevMvt]);
+          updatedItem = { ...s, currentQty: newQty };
+          return updatedItem;
         }
         return s;
       })
     );
+
+    if (updatedItem) {
+      sqliteApi.saveStockItem(updatedItem).catch((err) =>
+        console.error('Failed to update stock qty in SQLite:', err)
+      );
+    }
+    if (newMovement) {
+      sqliteApi.addStockMovement(newMovement).catch((err) =>
+        console.error('Failed to save stock movement in SQLite:', err)
+      );
+    }
   };
 
-  const handleAddNewPart = (part: StockItem) => {
-    setStock((prev) => [part, ...prev]);
-    showNotification(`Matière / Pièce ${part.partNumber} ajoutée au catalogue magasin.`);
+  const handleAddNewPart = async (part: StockItem) => {
+    setStock((prev) => [part, ...prev.filter((s) => s.id !== part.id && s.partNumber !== part.partNumber)]);
+    try {
+      await sqliteApi.createStockItem(part);
+      showNotification(`Matière / Pièce ${part.partNumber} enregistrée avec succès dans le catalogue.`);
+    } catch (err: any) {
+      console.error('Failed to create stock item in SQLite:', err);
+      showNotification(`Erreur sauvegarde pièce: ${err?.message || err}`);
+    }
   };
 
-  const handleRecordMovement = (movement: StockMovement) => {
+  const handleRecordMovement = async (movement: StockMovement) => {
     setStockMovements((prev) => [movement, ...prev]);
+    sqliteApi.addStockMovement(movement).catch((err) =>
+      console.error('Failed to save movement in SQLite:', err)
+    );
   };
 
-  const handleDeleteMovement = (id: string) => {
+  const handleDeleteMovement = async (id: string) => {
     const target = stockMovements.find((m) => m.id === id);
     setStockMovements((prev) => prev.filter((m) => m.id !== id));
+    sqliteApi.deleteStockMovement(id).catch((err) =>
+      console.error('Failed to delete movement in SQLite:', err)
+    );
     logMovement({
       category: 'Stock Magasin',
       action: 'DELETE',
@@ -1704,14 +1729,50 @@ function GMAOAppContent() {
     showNotification(`Mouvement de stock supprimé.`);
   };
 
-  const handleBulkImportStock = (newItems: StockItem[]) => {
-    setStock((prev) => [...newItems, ...prev]);
-    showNotification(`${newItems.length} articles importés avec succès dans le stock.`);
+  const handleBulkImportStock = async (newItems: StockItem[]) => {
+    if (!newItems || newItems.length === 0) return;
+
+    // Merge into state avoiding duplicates by id or partNumber
+    setStock((prev) => {
+      const newIds = new Set(newItems.map((n) => n.id));
+      const newRefs = new Set(newItems.map((n) => n.partNumber.trim().toLowerCase()));
+      const rest = prev.filter(
+        (s) => !newIds.has(s.id) && !newRefs.has(s.partNumber.trim().toLowerCase())
+      );
+      return [...newItems, ...rest];
+    });
+
+    try {
+      await sqliteApi.batchUpsertStockItems(newItems);
+      logMovement({
+        category: 'Stock Magasin',
+        action: 'IMPORT',
+        targetRef: `Lot de ${newItems.length} articles`,
+        user: `${currentUser.name} (${currentUser.role})`,
+        details: `Importation et enregistrement persistant de ${newItems.length} articles dans la base SQLite.`,
+        severity: 'info',
+      });
+      showNotification(`${newItems.length} articles importés et enregistrés de façon permanente.`);
+    } catch (err: any) {
+      console.error('Erreur batchUpsertStockItems:', err);
+      // Fallback: individual upserts
+      try {
+        for (const item of newItems) {
+          await sqliteApi.saveStockItem(item);
+        }
+        showNotification(`${newItems.length} articles importés et enregistrés.`);
+      } catch (fallbackErr: any) {
+        showNotification(`Erreur lors de la sauvegarde: ${fallbackErr?.message || fallbackErr}`);
+      }
+    }
   };
 
-  const handleDeletePart = (id: string) => {
+  const handleDeletePart = async (id: string) => {
     setStock((prev) => prev.filter((s) => s.id !== id));
-    showNotification('Article supprimé du catalogue magasin.');
+    sqliteApi.deleteStockItem(id).catch((err) =>
+      console.error('Failed to delete stock item in SQLite:', err)
+    );
+    showNotification('Article supprimé du catalogue magasin et de la base.');
   };
 
   // Delivery Notes

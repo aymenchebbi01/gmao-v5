@@ -27,9 +27,11 @@ import {
   deleteInterventionReport,
   getStockItems,
   upsertStockItem,
+  batchUpsertStockItems,
   deleteStockItem,
   getStockMovements,
   addStockMovement,
+  deleteStockMovement,
   getMaterials,
   upsertMaterial,
   deleteMaterial,
@@ -515,6 +517,16 @@ async function startServer() {
     }
   });
 
+  app.post('/api/stock-items/batch', async (req: Request, res: Response) => {
+    try {
+      const items = Array.isArray(req.body) ? req.body : [];
+      const created = await batchUpsertStockItems(items);
+      res.json(created);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.post('/api/stock-items', async (req: Request, res: Response) => {
     try {
       const created = await upsertStockItem(req.body);
@@ -558,6 +570,15 @@ async function startServer() {
     try {
       const created = await addStockMovement(req.body);
       res.json(created);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/stock-movements/:id', async (req: Request, res: Response) => {
+    try {
+      await deleteStockMovement(req.params.id);
+      res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

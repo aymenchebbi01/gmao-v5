@@ -616,6 +616,7 @@ export type AuditAction =
   | 'UPDATE'
   | 'STOCK_IN'
   | 'STOCK_OUT'
+  | 'IMPORT'
   | 'DELETE'
   | 'LOGIN_SWITCH'
   | 'BACKUP_CREATE'
