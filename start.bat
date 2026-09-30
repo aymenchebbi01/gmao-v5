@@ -1,57 +1,76 @@
 @echo off
-setlocal enabledelayedexpansion
+setlocal
+cd /d "%~dp0"
 
-title Thermoplastics Tunisia GMAO - Local Server (Port 5033)
+title Thermoplastics Tunisia GMAO - Port 5033
 
 echo ======================================================================
 echo   Thermoplastics Tunisia - GMAO Maintenance Management System
 echo ======================================================================
+echo Dossier du projet : %CD%
 echo.
 
-:: Configure application port
-set PORT=5033
-set NODE_ENV=development
-
-:: Check if Node.js is installed
-where node >nul 2>nul
-if %errorlevel% neq 0 (
-    echo [ERREUR] Node.js n'est pas installe ou n'est pas dans le PATH !
-    echo Veuillez installer Node.js (version 20 ou 22 recommandee) depuis https://nodejs.org
+node -v >nul 2>&1
+if errorlevel 1 (
+    echo [ERREUR] Node.js n est pas installe sur votre systeme.
+    echo.
+    echo Veuillez installer Node.js (version 20 ou 22 LTS recommandee) :
+    echo https://nodejs.org
+    echo.
+    echo Une fois l installation terminee, relancez ce fichier start.bat.
     echo.
     pause
     exit /b 1
 )
 
-:: Verify and install npm dependencies if node_modules is missing
-if not exist "node_modules\" (
-    echo [INFO] Le dossier node_modules est introuvable. Installation des dependances...
+echo [OK] Node.js detecte :
+node -v
+echo [OK] npm detecte :
+call npm -v
+echo.
+
+if not exist "node_modules" (
+    echo [INFO] Le dossier node_modules est absent.
+    echo Installation automatique des dependances (npm install)...
+    echo Veuillez patienter pendant le telechargement...
+    echo.
     call npm install
-    if %errorlevel% neq 0 (
-        echo [ERREUR] L'installation des dependances a echoue.
+    if errorlevel 1 (
+        echo.
+        echo [ERREUR] L installation des dependances a echoue.
+        echo Verifiez votre connexion internet et reessayez.
+        echo.
         pause
         exit /b 1
     )
+    echo [OK] Dependances installees avec succes.
+    echo.
 )
 
-:: Ensure required storage directories exist
-if not exist "data\" mkdir data
-if not exist "uploads\" mkdir uploads
-if not exist "backups\" mkdir backups
+if not exist "data" mkdir data
+if not exist "uploads" mkdir uploads
+if not exist "backups" mkdir backups
 
-echo [OK] Port configure : %PORT%
-echo [OK] Demarrage du serveur GMAO local...
+set PORT=5033
+set NODE_ENV=development
+
+echo ======================================================================
+echo   Demarrage du serveur GMAO sur le port %PORT%...
 echo.
 echo   * Application Bureau : http://localhost:%PORT%
 echo   * Mode Tablette      : http://localhost:%PORT/#tablet
 echo.
-echo Pour arreter l'application, fermez cette fenetre ou appuyez sur Ctrl+C.
+echo   Gardez cette fenetre ouverte pendant l utilisation du GMAO.
+echo   Pour arreter le serveur : appuyez sur Ctrl+C ou fermez la fenetre.
 echo ======================================================================
 echo.
 
-:: Automatically open default browser after a 2-second delay
-start "" cmd /c "timeout /t 2 /nobreak >nul & start http://localhost:%PORT%"
+start "" powershell -NoProfile -Command "Start-Sleep -Seconds 3; Start-Process http://localhost:5033" >nul 2>&1
 
-:: Run the application with tsx server
 call npm run dev
 
+echo.
+echo ======================================================================
+echo Le serveur s est arrete.
+echo ======================================================================
 pause
