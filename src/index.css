@@ -1,0 +1,24 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    background-color: #ebeeed;
+    color: #171717;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Ensure numbers in tables, metrics, and timestamps use tabular numerals */
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@media print {
+  body {
+    background-color: white !important;
+  }
+  aside, header, button {
+    display: none !important;
+  }
+}
