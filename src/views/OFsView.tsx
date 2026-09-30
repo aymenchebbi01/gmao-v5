@@ -207,10 +207,11 @@ export const OFsView: React.FC<OFsViewProps> = ({
 
     const selMach = machines.find((m) => m.id === formData.machineId);
     const selMold = molds.find((m) => m.id === formData.moldId);
+    const finalOfNumber = (formData.ofNumber.trim() || generateNextOFRef(ofs, formData.dueDate)).toUpperCase();
 
     if (editingOF) {
       const updates: Partial<ProductionOrderOF> = {
-        ofNumber: formData.ofNumber.trim(),
+        ofNumber: finalOfNumber,
         title: formData.title.trim(),
         machineId: formData.machineId || undefined,
         machineName: selMach ? `${selMach.number} — ${selMach.name || selMach.brand}` : undefined,
@@ -227,13 +228,13 @@ export const OFsView: React.FC<OFsViewProps> = ({
       onUpdateOF(editingOF.id, updates);
       setIsImportModalOpen(false);
       setEditingOF(null);
-      toast.success(`Ordre de fabrication ${formData.ofNumber} mis à jour avec succès.`);
+      toast.success(`Ordre de fabrication ${finalOfNumber} mis à jour avec succès.`);
       return;
     }
 
     const newOF: ProductionOrderOF = {
       id: `of-${Date.now()}`,
-      ofNumber: formData.ofNumber.trim(),
+      ofNumber: finalOfNumber,
       title: formData.title.trim(),
       machineId: formData.machineId || undefined,
       machineName: selMach ? `${selMach.number} — ${selMach.name || selMach.brand}` : undefined,
@@ -630,14 +631,31 @@ export const OFsView: React.FC<OFsViewProps> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="font-bold text-neutral-800 block mb-1">N° Ordre de Fabrication (OF) * :</label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.ofNumber}
-                    onChange={(e) => setFormData({ ...formData, ofNumber: e.target.value })}
-                    className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-xl font-mono font-bold text-blue-700"
-                  />
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="font-bold text-neutral-800 block">N° Ordre de Fabrication (OF) * :</label>
+                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 bg-blue-100 text-blue-800 rounded-md">
+                      Séquentiel (OF-YYYY-XXXX)
+                    </span>
+                  </div>
+                  <div className="relative flex items-center">
+                    <input
+                      type="text"
+                      required
+                      value={formData.ofNumber}
+                      onChange={(e) => setFormData({ ...formData, ofNumber: e.target.value.toUpperCase() })}
+                      className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-xl font-mono font-bold text-blue-700 uppercase pr-16"
+                    />
+                    {!editingOF && (
+                      <button
+                        type="button"
+                        onClick={() => setFormData((prev) => ({ ...prev, ofNumber: generateNextOFRef(ofs, prev.dueDate) }))}
+                        className="absolute right-2 px-2 py-1 bg-white hover:bg-blue-50 text-blue-700 rounded text-[10px] font-bold border border-blue-200 cursor-pointer shadow-2xs"
+                        title="Générer automatiquement le numéro séquentiel suivant"
+                      >
+                        Auto N°
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div>
                   <label className="font-bold text-neutral-800 block mb-1">Priorité :</label>

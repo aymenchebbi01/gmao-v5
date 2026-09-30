@@ -13,6 +13,7 @@ import {
   AppUser,
   MoldMaintenance,
   AuditLogEntry,
+  ProductionOrderOF,
 } from '../types/gmao';
 import { getAuditLogs, logMovement } from './auditLogger';
 
@@ -30,6 +31,7 @@ export interface FullGMAOState {
   calendarEvents: CalendarEvent[];
   users: AppUser[];
   moldMaintenances: MoldMaintenance[];
+  productionOrders?: ProductionOrderOF[];
   auditLogs?: AuditLogEntry[];
 }
 

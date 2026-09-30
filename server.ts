@@ -1218,7 +1218,18 @@ async function startServer() {
   if (!fs.existsSync(uploadsPath)) {
     fs.mkdirSync(uploadsPath, { recursive: true });
   }
-  app.use('/uploads', express.static(uploadsPath));
+  app.use(
+    '/uploads',
+    express.static(uploadsPath, {
+      setHeaders: (res, filePath) => {
+        if (filePath.toLowerCase().endsWith('.pdf')) {
+          res.setHeader('Content-Type', 'application/pdf');
+          res.setHeader('Content-Disposition', 'inline');
+        }
+        res.setHeader('Access-Control-Allow-Origin', '*');
+      },
+    })
+  );
 
   app.post('/api/upload-pdf', (req: Request, res: Response) => {
     try {

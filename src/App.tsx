@@ -171,42 +171,50 @@ function GMAOAppContent() {
   const [isDbLoaded, setIsDbLoaded] = useState(false);
   const [sqliteConnected, setSqliteConnected] = useState(false);
 
+  // Refresh all state directly from SQLite without page reload
+  const refreshAllData = React.useCallback(async (): Promise<boolean> => {
+    try {
+      const [data, ofs] = await Promise.all([
+        sqliteApi.getFullState(),
+        sqliteApi.getOFs().catch(() => []),
+      ]);
+
+      if (data) {
+        if (Array.isArray(data.machines)) setMachines(data.machines);
+        if (Array.isArray(data.molds)) setMolds(data.molds);
+        if (Array.isArray(data.requests)) setRequests(data.requests);
+        if (Array.isArray(data.orders)) setOrders(data.orders);
+        if (Array.isArray(data.reports)) setReports(data.reports);
+        if (Array.isArray(data.stock)) setStock(data.stock);
+        if (Array.isArray(data.stockMovements)) setStockMovements(data.stockMovements);
+        if (Array.isArray(data.deliveryNotes)) setDeliveryNotes(data.deliveryNotes);
+        if (Array.isArray(data.calendarEvents)) setCalendarEvents(data.calendarEvents);
+        if (Array.isArray(data.users) && data.users.length > 0) setUsers(data.users);
+        if (Array.isArray(data.moldMaintenances)) setMoldMaintenances(data.moldMaintenances);
+        if (Array.isArray(data.productionOrders)) {
+          setProductionOrders(data.productionOrders);
+        } else if (Array.isArray(ofs)) {
+          setProductionOrders(ofs);
+        }
+        setSqliteConnected(true);
+        return true;
+      }
+      if (Array.isArray(ofs)) {
+        setProductionOrders(ofs);
+      }
+      return true;
+    } catch (err) {
+      console.warn('[SQLite] Refresh error:', err);
+      return false;
+    }
+  }, []);
+
   // Load complete state from SQLite database on mount
   React.useEffect(() => {
-    sqliteApi.getFullState()
-      .then((data) => {
-        if (data) {
-          if (Array.isArray(data.machines)) setMachines(data.machines);
-          if (Array.isArray(data.molds)) setMolds(data.molds);
-          if (Array.isArray(data.requests)) setRequests(data.requests);
-          if (Array.isArray(data.orders)) setOrders(data.orders);
-          if (Array.isArray(data.reports)) setReports(data.reports);
-          if (Array.isArray(data.stock)) setStock(data.stock);
-          if (Array.isArray(data.stockMovements)) setStockMovements(data.stockMovements);
-          if (Array.isArray(data.deliveryNotes)) setDeliveryNotes(data.deliveryNotes);
-          if (Array.isArray(data.calendarEvents)) setCalendarEvents(data.calendarEvents);
-          if (Array.isArray(data.users) && data.users.length > 0) {
-            setUsers(data.users);
-          }
-          if (Array.isArray(data.moldMaintenances)) setMoldMaintenances(data.moldMaintenances);
-          setSqliteConnected(true);
-          console.log('[SQLite] State synchronized from SQLite database.');
-        }
-      })
-      .catch((err) => {
-        console.warn('[SQLite] Backend load warning:', err);
-      })
-      .finally(() => {
-        setIsDbLoaded(true);
-      });
-
-    // Also load Production Orders (OFs)
-    sqliteApi.getOFs()
-      .then((ofs) => {
-        if (Array.isArray(ofs)) setProductionOrders(ofs);
-      })
-      .catch((err) => console.warn('[SQLite] OFs load error:', err));
-  }, []);
+    refreshAllData().finally(() => {
+      setIsDbLoaded(true);
+    });
+  }, [refreshAllData]);
 
   // Debounced auto-save to SQLite when core data state changes
   const isInitialMount = React.useRef(true);
@@ -638,11 +646,12 @@ function GMAOAppContent() {
     setProductionOrders((prev) => [ofItem, ...prev.filter((o) => o.id !== ofItem.id)]);
 
     // Link assigned machine with the active OF & its attached PDF
+    let updatedMachine: Machine | undefined;
     if (ofItem.machineId) {
       setMachines((prev) =>
         prev.map((m) => {
           if (m.id === ofItem.machineId) {
-            return {
+            updatedMachine = {
               ...m,
               ofReference: ofItem.ofNumber,
               currentProduct: ofItem.title,
@@ -657,6 +666,7 @@ function GMAOAppContent() {
                 status: ofItem.status === 'Done' ? 'completed' : ofItem.status === 'In Progress' ? 'in_progress' : 'pending',
               },
             };
+            return updatedMachine;
           }
           return m;
         })
@@ -665,6 +675,9 @@ function GMAOAppContent() {
 
     try {
       await sqliteApi.saveOF(ofItem);
+      if (updatedMachine) {
+        await sqliteApi.saveMachine(updatedMachine).catch(() => {});
+      }
       showNotification(`Ordre de fabrication ${ofItem.ofNumber} enregistré.`);
     } catch (err) {
       console.warn('[SQLite] Error saving OF:', err);
@@ -684,12 +697,13 @@ function GMAOAppContent() {
     );
 
     // Keep assigned machine in sync
+    let updatedMachine: Machine | undefined;
     if (fullOrder?.machineId) {
       const order = fullOrder;
       setMachines((prev) =>
         prev.map((m) => {
           if (m.id === order.machineId) {
-            return {
+            updatedMachine = {
               ...m,
               ofReference: order.ofNumber,
               currentProduct: order.title,
@@ -704,6 +718,7 @@ function GMAOAppContent() {
                 status: order.status === 'Done' ? 'completed' : order.status === 'In Progress' ? 'in_progress' : 'pending',
               },
             };
+            return updatedMachine;
           }
           return m;
         })
@@ -712,6 +727,9 @@ function GMAOAppContent() {
 
     try {
       await sqliteApi.updateOF(id, updates);
+      if (updatedMachine) {
+        await sqliteApi.saveMachine(updatedMachine).catch(() => {});
+      }
     } catch (err) {
       console.warn('[SQLite] Error updating OF:', err);
     }
@@ -722,11 +740,12 @@ function GMAOAppContent() {
       prev.map((o) => (o.id === updatedOrder.id ? updatedOrder : o))
     );
 
+    let updatedMachine: Machine | undefined;
     if (updatedOrder.machineId) {
       setMachines((prev) =>
         prev.map((m) => {
           if (m.id === updatedOrder.machineId) {
-            return {
+            updatedMachine = {
               ...m,
               ofReference: updatedOrder.ofNumber,
               currentProduct: updatedOrder.title,
@@ -741,6 +760,7 @@ function GMAOAppContent() {
                 status: updatedOrder.status === 'Done' ? 'completed' : updatedOrder.status === 'In Progress' ? 'in_progress' : 'pending',
               },
             };
+            return updatedMachine;
           }
           return m;
         })
@@ -749,6 +769,9 @@ function GMAOAppContent() {
 
     try {
       await sqliteApi.updateOF(updatedOrder.id, updatedOrder);
+      if (updatedMachine) {
+        await sqliteApi.saveMachine(updatedMachine).catch(() => {});
+      }
     } catch (err) {
       console.warn('[SQLite] Error updating OF:', err);
     }
@@ -1815,6 +1838,7 @@ function GMAOAppContent() {
     calendarEvents,
     users,
     moldMaintenances,
+    productionOrders,
   };
 
   const handleRestoreFullState = (restored: FullGMAOState) => {
@@ -1829,6 +1853,7 @@ function GMAOAppContent() {
     if (restored.calendarEvents) setCalendarEvents(restored.calendarEvents);
     if (restored.users) setUsers(restored.users);
     if (restored.moldMaintenances) setMoldMaintenances(restored.moldMaintenances);
+    if (restored.productionOrders) setProductionOrders(restored.productionOrders);
     // Persist restored state immediately to SQLite database
     sqliteApi.saveFullState(restored).catch((err) => console.warn('SQLite restore error:', err));
     showNotification('Base de données SQLite GMAO restaurée avec succès.');
@@ -1901,6 +1926,7 @@ function GMAOAppContent() {
           productionOrders={productionOrders}
           onUpdateProductionOrder={handleUpdateProductionOrder}
           onUpdateOF={handleUpdateOF}
+          onRefreshData={refreshAllData}
           currentUser={tabletUser}
           users={users}
           onSwitchUser={(u) => setTabletUser(u)}

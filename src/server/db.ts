@@ -1523,11 +1523,22 @@ export async function restoreFullState(state: any): Promise<void> {
     calendarEvents: 'calendar_events',
     users: 'users',
     moldMaintenances: 'mold_maintenances',
-    productionOrders: 'production_orders_of',
   };
   for (const [key, table] of Object.entries(keyToTable)) {
     if (Array.isArray(state[key])) {
       database.run(`DELETE FROM ${table};`);
+    }
+  }
+
+  // Handle productionOrders safely: only clear and replace if non-empty array is provided
+  if (Array.isArray(state.productionOrders) && state.productionOrders.length > 0) {
+    database.run('DELETE FROM production_orders_of;');
+    for (const ofItem of state.productionOrders) {
+      database.run(
+        `INSERT OR REPLACE INTO production_orders_of (id, of_number, title, machine_name, mold_name, status, date, data, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [ofItem.id, ofItem.ofNumber || '', ofItem.title || '', ofItem.machineName || '', ofItem.moldName || '', ofItem.status || 'Pending', ofItem.date || now.split('T')[0], JSON.stringify(ofItem), now]
+      );
     }
   }
 
@@ -1672,17 +1683,6 @@ export async function restoreFullState(state: any): Promise<void> {
         `INSERT OR REPLACE INTO mold_maintenances (id, mold_id, mold_number, date, repair_location, status, issue_description, data, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [mm.id, mm.moldId, mm.moldNumber, mm.date, mm.repairLocation, mm.status, mm.issueDescription, JSON.stringify(mm), now]
-      );
-    }
-  }
-
-  // Restore productionOrders
-  if (Array.isArray(state.productionOrders)) {
-    for (const ofItem of state.productionOrders) {
-      database.run(
-        `INSERT OR REPLACE INTO production_orders_of (id, of_number, title, machine_name, mold_name, status, date, data, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [ofItem.id, ofItem.ofNumber || '', ofItem.title || '', ofItem.machineName || '', ofItem.moldName || '', ofItem.status || 'Pending', ofItem.date || now.split('T')[0], JSON.stringify(ofItem), now]
       );
     }
   }

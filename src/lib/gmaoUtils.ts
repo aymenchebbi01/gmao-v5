@@ -134,19 +134,28 @@ export const generateNextReportRef = (
  * Format: OF-YYYY-XXXX (e.g. OF-2026-0001, OF-2026-0002... and when year changes to 2027: OF-2027-0001)
  */
 export const generateNextOFRef = (
-  existingOFs: { ofNumber?: string }[],
+  existingOFs: { ofNumber?: string; ofReference?: string }[],
   targetDate?: string
 ): string => {
   const year = targetDate ? new Date(targetDate).getFullYear() : new Date().getFullYear();
   const prefix = `OF-${year}-`;
   let maxSeq = 0;
 
-  for (const ofItem of existingOFs) {
-    if (ofItem.ofNumber && ofItem.ofNumber.startsWith(prefix)) {
-      const parts = ofItem.ofNumber.split('-');
+  for (const ofItem of existingOFs || []) {
+    const rawRef = (ofItem.ofNumber || (ofItem as any).ofReference || '').trim().toUpperCase();
+    if (rawRef.startsWith(prefix)) {
+      const parts = rawRef.split('-');
       const num = parseInt(parts[parts.length - 1], 10);
       if (!isNaN(num) && num > maxSeq) {
         maxSeq = num;
+      }
+    } else {
+      const match = rawRef.match(/OF-?(\d{4})-(\d+)/i) || rawRef.match(/OF-?(\d+)/i);
+      if (match) {
+        const num = parseInt(match[match.length - 1], 10);
+        if (!isNaN(num) && num > maxSeq) {
+          maxSeq = num;
+        }
       }
     }
   }

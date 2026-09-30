@@ -101,6 +101,7 @@ export interface TabletViewProps {
   productionOrders?: ProductionOrderOF[];
   onUpdateProductionOrder?: (order: ProductionOrderOF) => void;
   onUpdateOF?: (id: string, updates: Partial<ProductionOrderOF>) => void;
+  onRefreshData?: () => Promise<boolean> | void;
   currentUser?: AppUser;
   users?: AppUser[];
   onSwitchUser?: (user: AppUser) => void;
@@ -697,6 +698,7 @@ export const TabletView: React.FC<TabletViewProps> = ({
   productionOrders = [],
   onUpdateProductionOrder,
   onUpdateOF,
+  onRefreshData,
   currentUser,
   users = [],
   onSwitchUser,
@@ -1109,6 +1111,7 @@ export const TabletView: React.FC<TabletViewProps> = ({
   const [showDoneOFs, setShowDoneOFs] = useState(false);
   const [syncedOFs, setSyncedOFs] = useState<ProductionOrderOF[]>(productionOrders || []);
   const [isRefreshingOFs, setIsRefreshingOFs] = useState(false);
+  const [isSyncingAllData, setIsSyncingAllData] = useState(false);
 
   // Sync when prop updates
   useEffect(() => {
@@ -1129,6 +1132,32 @@ export const TabletView: React.FC<TabletViewProps> = ({
       console.warn('[Tablet] OF sync error:', e);
     } finally {
       setIsRefreshingOFs(false);
+    }
+  };
+
+  // Full SQLite manual refresh function triggered by tablet refresh buttons
+  const handleManualRefresh = async () => {
+    if (isSyncingAllData) return;
+    setIsSyncingAllData(true);
+    try {
+      const results = await Promise.allSettled([
+        onRefreshData ? onRefreshData() : Promise.resolve(true),
+        refreshOFsFromBackend(),
+      ]);
+      const hasError = results.some((r) => r.status === 'rejected');
+      if (!hasError) {
+        showTabletToast(
+          'Base SQLite actualisée',
+          'Toutes les données (Machines, OFs & Ordres) sont à jour.'
+        );
+      } else {
+        showTabletToast('Actualisation effectuée', 'Les données les plus récentes ont été interrogées.');
+      }
+    } catch (e) {
+      console.warn('[Tablet] Manual sync error:', e);
+      showTabletToast('Synchronisation effectuée', 'Données locales actualisées.');
+    } finally {
+      setIsSyncingAllData(false);
     }
   };
 
@@ -2509,6 +2538,22 @@ export const TabletView: React.FC<TabletViewProps> = ({
 
         {/* Quick Industrial Status & Actions */}
         <div className="flex items-center gap-2">
+          {/* Instant DB Refresh Button (Fetches latest SQLite database state without reloading page) */}
+          <button
+            type="button"
+            onClick={handleManualRefresh}
+            disabled={isSyncingAllData || isRefreshingOFs}
+            className="min-h-[42px] px-3 bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700 text-slate-100 text-xs font-bold rounded-lg flex items-center gap-2 cursor-pointer transition-all disabled:opacity-50 shadow-xs"
+            title="Actualiser les données depuis la base SQLite (sans recharger la page)"
+          >
+            <RefreshCw
+              size={16}
+              className={isSyncingAllData || isRefreshingOFs ? 'animate-spin text-blue-400' : 'text-blue-400'}
+            />
+            <span className="hidden sm:inline">
+              {isSyncingAllData ? 'Actualisation...' : 'Actualiser'}
+            </span>
+          </button>
 
           {/* Current User Display (read-only, no switcher) */}
           <div
@@ -2684,6 +2729,20 @@ export const TabletView: React.FC<TabletViewProps> = ({
             </div>
 
             <div className="pt-6 border-t border-slate-200 space-y-3">
+              {/* Manual Refresh in Drawer */}
+              <button
+                type="button"
+                onClick={() => {
+                  handleManualRefresh();
+                  setIsSideMenuOpen(false);
+                }}
+                disabled={isSyncingAllData || isRefreshingOFs}
+                className="min-h-[44px] w-full p-2.5 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-800 font-bold rounded-lg text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors disabled:opacity-50"
+              >
+                <RefreshCw size={15} className={isSyncingAllData || isRefreshingOFs ? 'animate-spin text-blue-600' : 'text-blue-600'} />
+                <span>Actualiser la Base SQLite</span>
+              </button>
+
               {/* Connected User Info */}
               <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-lg px-4 py-3">
                 <UserCheck size={18} className="text-emerald-600 shrink-0" />
@@ -2863,19 +2922,34 @@ export const TabletView: React.FC<TabletViewProps> = ({
                           </div>
                           {(() => {
                             const machineOF = syncedOFs.find(
-                              (o) => (o.machineId === m.id || (o.machineName && o.machineName.includes(m.number)) || (m.ofReference && o.ofNumber === m.ofReference)) && o.status !== 'Done'
+                              (o) => (o.machineId === m.id || (o.machineName && o.machineName.includes(m.number)) || (m.ofReference && o.ofNumber === m.ofReference) || (m.activeOf && o.id === m.activeOf.id))
                             );
-                            if (!machineOF) return null;
+                            const effectivePdfUrl = machineOF?.pdfUrl || m.activeOf?.pdfUrl;
+                            const effectiveOfRef = machineOF?.ofNumber || m.ofReference || m.activeOf?.ofReference;
+                            if (!effectiveOfRef) return null;
+                            const targetOF: ProductionOrderOF = machineOF || {
+                              id: m.activeOf?.id || `of-mach-${m.id}`,
+                              ofNumber: effectiveOfRef,
+                              title: m.activeOf?.injectedItem || m.currentProduct || 'Production',
+                              machineId: m.id,
+                              machineName: m.name || m.number,
+                              status: 'Pending',
+                              pdfUrl: effectivePdfUrl,
+                              targetQuantity: m.activeOf?.targetQuantity || 0,
+                              producedQuantity: 0,
+                              date: new Date().toISOString().split('T')[0],
+                              priority: 'Normal',
+                            };
                             return (
                               <div className="flex items-center gap-1.5 text-[11px] mt-1 pt-1 border-t border-slate-100">
                                 <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wide shrink-0">OF:</span>
-                                <span className="font-mono font-bold text-blue-800 text-[11px] truncate">{machineOF.ofNumber}</span>
-                                {machineOF.pdfUrl && (
+                                <span className="font-mono font-bold text-blue-800 text-[11px] truncate">{effectiveOfRef}</span>
+                                {effectivePdfUrl && (
                                   <button
                                     type="button"
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      setPreviewPdfOF(machineOF);
+                                      setPreviewPdfOF(targetOF);
                                     }}
                                     className="ml-auto px-1.5 py-0.5 bg-red-100 hover:bg-red-200 text-red-800 rounded text-[10px] font-bold flex items-center gap-1 cursor-pointer shrink-0 transition-colors"
                                     title="Consulter le rapport PDF de cet OF"
@@ -3078,21 +3152,36 @@ export const TabletView: React.FC<TabletViewProps> = ({
                       {/* ── Active OF Row (if assigned) ── */}
                       {(() => {
                         const machineOF = syncedOFs.find(
-                          (o) => (o.machineId === m.id || (o.machineName && o.machineName.includes(m.number)) || (m.ofReference && o.ofNumber === m.ofReference)) && o.status !== 'Done'
+                          (o) => (o.machineId === m.id || (o.machineName && o.machineName.includes(m.number)) || (m.ofReference && o.ofNumber === m.ofReference) || (m.activeOf && o.id === m.activeOf.id))
                         );
-                        if (!machineOF) return null;
+                        const effectivePdfUrl = machineOF?.pdfUrl || m.activeOf?.pdfUrl;
+                        const effectiveOfRef = machineOF?.ofNumber || m.ofReference || m.activeOf?.ofReference;
+                        if (!effectiveOfRef) return null;
+                        const targetOF: ProductionOrderOF = machineOF || {
+                          id: m.activeOf?.id || `of-mach-${m.id}`,
+                          ofNumber: effectiveOfRef,
+                          title: m.activeOf?.injectedItem || m.currentProduct || 'Production',
+                          machineId: m.id,
+                          machineName: m.name || m.number,
+                          status: 'Pending',
+                          pdfUrl: effectivePdfUrl,
+                          targetQuantity: m.activeOf?.targetQuantity || 0,
+                          producedQuantity: 0,
+                          date: new Date().toISOString().split('T')[0],
+                          priority: 'Normal',
+                        };
                         return (
                           <div className="mt-1 flex items-center justify-between text-[11px] bg-blue-50/70 border border-blue-200/80 rounded px-2 py-0.5">
                             <div className="flex items-center gap-1.5 truncate">
                               <span className="text-[10px] font-bold text-blue-700 uppercase tracking-wide shrink-0">OF</span>
-                              <span className="font-mono font-bold text-blue-900 truncate">{machineOF.ofNumber}</span>
+                              <span className="font-mono font-bold text-blue-900 truncate">{effectiveOfRef}</span>
                             </div>
-                            {machineOF.pdfUrl && (
+                            {effectivePdfUrl && (
                               <button
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setPreviewPdfOF(machineOF);
+                                  setPreviewPdfOF(targetOF);
                                 }}
                                 className="px-1.5 py-0.5 bg-red-100 hover:bg-red-200 text-red-800 rounded text-[10px] font-bold flex items-center gap-1 cursor-pointer shrink-0 transition-colors ml-2"
                                 title="Voir le PDF de l'OF"
@@ -5605,13 +5694,13 @@ export const TabletView: React.FC<TabletViewProps> = ({
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={refreshOFsFromBackend}
-                    disabled={isRefreshingOFs}
+                    onClick={handleManualRefresh}
+                    disabled={isSyncingAllData || isRefreshingOFs}
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-lg border border-slate-300 transition-colors cursor-pointer disabled:opacity-50"
-                    title="Actualiser la liste des OFs depuis le serveur"
+                    title="Actualiser la liste des OFs et la base SQLite"
                   >
-                    <RefreshCw size={14} className={isRefreshingOFs ? 'animate-spin text-blue-600' : 'text-slate-600'} />
-                    <span>Actualiser</span>
+                    <RefreshCw size={14} className={isSyncingAllData || isRefreshingOFs ? 'animate-spin text-blue-600' : 'text-slate-600'} />
+                    <span>{isSyncingAllData ? 'Actualisation...' : 'Actualiser'}</span>
                   </button>
                   <span className="font-mono text-xs font-bold px-3 py-1.5 bg-blue-50 text-blue-800 rounded-lg border border-blue-200">
                     {activeOFsCount} OF(s) Actif(s)
@@ -5756,17 +5845,30 @@ export const TabletView: React.FC<TabletViewProps> = ({
                       {/* Action buttons */}
                       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-1">
                         {ofItem.pdfUrl ? (
-                          <button
-                            type="button"
-                            onClick={() => setPreviewPdfOF(ofItem)}
-                            className="min-h-[44px] flex-1 px-3 bg-red-50 hover:bg-red-100 text-red-800 font-bold rounded-lg text-xs border border-red-200 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                          >
-                            <FileText size={16} className="text-red-600" />
-                            <span>Voir le Rapport PDF</span>
-                          </button>
+                          <div className="flex items-center gap-1.5 flex-1">
+                            <button
+                              type="button"
+                              onClick={() => setPreviewPdfOF(ofItem)}
+                              className="min-h-[44px] flex-1 px-3 bg-red-50 hover:bg-red-100 text-red-800 font-bold rounded-lg text-xs border border-red-200 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                              title="Consulter le dossier technique PDF"
+                            >
+                              <FileText size={16} className="text-red-600" />
+                              <span>Voir le Rapport PDF</span>
+                            </button>
+                            <a
+                              href={ofItem.pdfUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="min-h-[44px] min-w-[44px] bg-red-100 hover:bg-red-200 text-red-800 rounded-lg flex items-center justify-center border border-red-200 transition-colors cursor-pointer shrink-0"
+                              title="Ouvrir le document PDF directement en plein écran"
+                            >
+                              <ExternalLink size={16} className="text-red-700" />
+                            </a>
+                          </div>
                         ) : (
-                          <div className="min-h-[44px] flex-1 px-3 bg-slate-100 text-slate-400 font-semibold rounded-lg text-xs flex items-center justify-center">
-                            Pas de PDF joint
+                          <div className="min-h-[44px] flex-1 px-3 bg-slate-100 text-slate-400 font-semibold rounded-lg text-xs flex items-center justify-center gap-1.5">
+                            <FileText size={14} className="text-slate-400" />
+                            <span>Pas de PDF joint</span>
                           </div>
                         )}
 
@@ -5964,37 +6066,29 @@ export const TabletView: React.FC<TabletViewProps> = ({
               </div>
             )}
 
-            <div className="flex-1 bg-slate-100 p-2 overflow-hidden flex flex-col">
+            <div className="flex-1 bg-slate-100 p-2 sm:p-3 overflow-hidden flex flex-col">
               {previewPdfOF.pdfUrl ? (
-                <object
-                  data={previewPdfOF.pdfUrl}
-                  type="application/pdf"
-                  className="w-full h-full rounded-lg border border-slate-300 bg-white"
-                >
-                  <iframe
-                    src={previewPdfOF.pdfUrl}
-                    title={`PDF ${previewPdfOF.ofNumber}`}
-                    className="w-full h-full rounded-lg border-0 bg-white"
-                  />
-                  <div className="h-full flex flex-col items-center justify-center text-center p-8 space-y-4 bg-white rounded-lg border border-slate-300">
-                    <FileText size={48} className="text-red-500" />
-                    <div>
-                      <p className="font-bold text-slate-900 text-base">Rapport Technique PDF prêt</p>
-                      <p className="text-xs text-slate-500 mt-1 max-w-sm">
-                        Sur votre tablette, touchez le bouton ci-dessous pour ouvrir et feuilleter le document PDF en plein écran :
-                      </p>
-                    </div>
+                <div className="w-full h-full flex flex-col bg-white rounded-lg border border-slate-300 overflow-hidden shadow-xs">
+                  <div className="bg-slate-50 border-b border-slate-200 px-3 py-2 flex items-center justify-between text-xs shrink-0">
+                    <span className="font-semibold text-slate-700 truncate">
+                      Document technique : <span className="font-mono text-blue-700 font-bold">{previewPdfOF.ofNumber}</span>
+                    </span>
                     <a
                       href={previewPdfOF.pdfUrl}
                       target="_blank"
-                      rel="noreferrer"
-                      className="px-6 py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-md cursor-pointer transition-all"
+                      rel="noopener noreferrer"
+                      className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg flex items-center gap-1.5 transition-colors shrink-0 shadow-2xs"
                     >
-                      <ExternalLink size={16} />
-                      <span>Ouvrir le Rapport PDF ({previewPdfOF.ofNumber})</span>
+                      <ExternalLink size={13} />
+                      <span>Ouvrir en plein écran</span>
                     </a>
                   </div>
-                </object>
+                  <iframe
+                    src={previewPdfOF.pdfUrl}
+                    title={`PDF ${previewPdfOF.ofNumber}`}
+                    className="w-full flex-1 border-0 bg-white"
+                  />
+                </div>
               ) : (
                 <div className="flex-1 flex flex-col items-center justify-center text-slate-500 p-8 space-y-3">
                   <AlertCircle size={40} className="text-amber-500" />
